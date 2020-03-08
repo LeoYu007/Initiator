@@ -1,0 +1,3 @@
+rootProject.name='Initiator'
+include ':app'
+include ':initiator'
