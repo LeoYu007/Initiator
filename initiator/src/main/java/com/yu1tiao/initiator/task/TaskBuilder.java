@@ -22,7 +22,7 @@ public class TaskBuilder {
     private TaskCallback mTaskCallback;
     private List<Class<? extends Task>> mDependsOn;
 
-    TaskCallback getTaskCallback() {
+    public TaskCallback getTaskCallback() {
         return mTaskCallback;
     }
 
@@ -31,7 +31,7 @@ public class TaskBuilder {
         return this;
     }
 
-    boolean isIsRunAsSoon() {
+    public boolean isIsRunAsSoon() {
         return mIsRunAsSoon;
     }
 
@@ -40,7 +40,7 @@ public class TaskBuilder {
         return this;
     }
 
-    int getPriority() {
+    public int getPriority() {
         return mPriority;
     }
 
@@ -49,7 +49,7 @@ public class TaskBuilder {
         return this;
     }
 
-    boolean isIsNeedWait() {
+    public boolean isIsNeedWait() {
         return mIsNeedWait;
     }
 
@@ -58,7 +58,7 @@ public class TaskBuilder {
         return this;
     }
 
-    ThreadMode getThreadMode() {
+    public ThreadMode getThreadMode() {
         return mThreadMode;
     }
 
@@ -67,7 +67,7 @@ public class TaskBuilder {
         return this;
     }
 
-    Runnable getTailRunnable() {
+    public Runnable getTailRunnable() {
         return mTailRunnable;
     }
 
@@ -76,7 +76,7 @@ public class TaskBuilder {
         return this;
     }
 
-    boolean isIsOnlyInMainProcess() {
+    public boolean isIsOnlyInMainProcess() {
         return mIsOnlyInMainProcess;
     }
 
@@ -85,7 +85,7 @@ public class TaskBuilder {
         return this;
     }
 
-    List<Class<? extends Task>> getDependsOn() {
+    public List<Class<? extends Task>> getDependsOn() {
         return mDependsOn;
     }
 

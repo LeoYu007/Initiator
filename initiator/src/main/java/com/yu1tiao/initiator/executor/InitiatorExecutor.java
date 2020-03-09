@@ -4,7 +4,7 @@ import android.os.Handler;
 import android.os.Looper;
 
 import com.yu1tiao.initiator.Initiator;
-import com.yu1tiao.initiator.task.InitiatorTask;
+import com.yu1tiao.initiator.task.InitiatorRunnable;
 import com.yu1tiao.initiator.task.Task;
 
 import java.util.ArrayList;
@@ -30,7 +30,7 @@ public class InitiatorExecutor implements IExecutor {
 
     @Override
     public void submit(Task task) {
-        InitiatorTask runnable = new InitiatorTask(task, mInitiator);
+        InitiatorRunnable runnable = new InitiatorRunnable(task, mInitiator);
         Future<?> future = null;
         switch (task.threadMode()) {
             case MAIN:

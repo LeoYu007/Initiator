@@ -6,16 +6,17 @@ import android.os.Process;
 import androidx.core.os.TraceCompat;
 
 import com.yu1tiao.initiator.Initiator;
+import com.yu1tiao.initiator.executor.ThreadMode;
 import com.yu1tiao.initiator.utils.InitiatorLog;
 
 /**
  * 任务真正执行的地方
  */
-public class InitiatorTask implements Runnable {
+public class InitiatorRunnable implements Runnable {
     private Task mTask;
     private Initiator mInitiator;
 
-    public InitiatorTask(Task task, Initiator initiator) {
+    public InitiatorRunnable(Task task, Initiator initiator) {
         this.mTask = task;
         this.mInitiator = initiator;
     }
@@ -25,7 +26,8 @@ public class InitiatorTask implements Runnable {
         TraceCompat.beginSection(mTask.getClass().getSimpleName());
         InitiatorLog.i(mTask.getClass().getSimpleName() + " begin run");
 
-        Process.setThreadPriority(mTask.priority());
+        if (mTask.threadMode() != ThreadMode.MAIN)
+            Process.setThreadPriority(mTask.priority());
 
         long startTime = System.currentTimeMillis();
 

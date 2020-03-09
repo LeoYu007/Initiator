@@ -8,14 +8,13 @@ import androidx.annotation.IntRange;
 import com.yu1tiao.initiator.Initiator;
 import com.yu1tiao.initiator.executor.ThreadMode;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 public abstract class Task implements ITask {
 
-    protected String mTag = getClass().getSimpleName().toString();
     protected Context mContext = Initiator.getContext();
-    protected boolean mIsMainProcess = Initiator.isMainProcess();// 当前进程是否是主进程
 
     private volatile boolean mIsWaiting;// 是否正在等待
     private volatile boolean mIsRunning;// 是否正在执行
@@ -30,11 +29,15 @@ public abstract class Task implements ITask {
     private Runnable mTailRunnable;
     private boolean mIsOnlyInMainProcess;
 
-    private final List<Class<? extends Task>> mDependsOn;
+    private List<Class<? extends Task>> mDependsOn;
     // 当前Task依赖的Task数量（需要等待被依赖的Task执行完毕才能执行自己），默认没有依赖
-    private final CountDownLatch mDependsCountDownLatch;
+    private CountDownLatch mDependsCountDownLatch;
 
-    Task(TaskBuilder builder) {
+    public Task() {
+        this(new TaskBuilder());
+    }
+
+    public Task(TaskBuilder builder) {
         this.mDependsOn = builder.getDependsOn();
         this.mDependsCountDownLatch = new CountDownLatch(mDependsOn == null ? 0 : mDependsOn.size());
 
@@ -119,6 +122,11 @@ public abstract class Task implements ITask {
         return mDependsOn;
     }
 
+    public void setDependsOn(List<Class<? extends Task>> dependsOn) {
+        this.mDependsOn = dependsOn;
+        this.mDependsCountDownLatch = new CountDownLatch(mDependsOn == null ? 0 : mDependsOn.size());
+    }
+
     @Override
     public ThreadMode threadMode() {
         return mThreadMode;
@@ -146,7 +154,6 @@ public abstract class Task implements ITask {
         this.mIsOnlyInMainProcess = mIsOnlyInMainProcess;
     }
 
-    @Override
     public void setTaskCallback(TaskCallback callBack) {
         this.mTaskCallback = callBack;
     }
@@ -188,4 +195,8 @@ public abstract class Task implements ITask {
         this.mIsWaiting = mIsWaiting;
     }
 
+    @SafeVarargs
+    protected final List<Class<? extends Task>> listOf(Class<? extends Task>... clz){
+        return Arrays.asList(clz);
+    }
 }
