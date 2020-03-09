@@ -3,7 +3,7 @@ package com.yu1tiao.initiator;
 import android.os.Looper;
 import android.os.MessageQueue;
 
-import com.yu1tiao.initiator.task.DispatchRunnable;
+import com.yu1tiao.initiator.task.InitiatorTask;
 import com.yu1tiao.initiator.task.Task;
 
 import java.util.LinkedList;
@@ -18,7 +18,7 @@ public class DelayInitiator {
         public boolean queueIdle() {
             if (mDelayTasks.size() > 0) {
                 Task task = mDelayTasks.poll();
-                new DispatchRunnable(task).run();
+                new InitiatorTask(task).run();
             }
             return !mDelayTasks.isEmpty();
         }

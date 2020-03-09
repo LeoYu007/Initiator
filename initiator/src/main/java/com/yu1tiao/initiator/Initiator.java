@@ -2,48 +2,45 @@ package com.yu1tiao.initiator;
 
 import android.content.Context;
 import android.os.Looper;
-import android.util.Log;
 
 import androidx.annotation.UiThread;
 
+import com.yu1tiao.initiator.executor.InitiatorExecutor;
+import com.yu1tiao.initiator.executor.ThreadMode;
 import com.yu1tiao.initiator.sort.TaskSortUtil;
-import com.yu1tiao.initiator.stat.TaskStat;
-import com.yu1tiao.initiator.task.DispatchRunnable;
 import com.yu1tiao.initiator.task.Task;
-import com.yu1tiao.initiator.task.TaskCallBack;
-import com.yu1tiao.initiator.utils.DispatcherLog;
+import com.yu1tiao.initiator.utils.InitiatorLog;
 import com.yu1tiao.initiator.utils.Utils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 启动器调用类
  */
-
 public class Initiator {
     private long mStartTime;
-    private static final int WAITTIME = 10000;
+    private static final int WAIT_TIME = 10000;
     private static Context sContext;
     private static boolean sIsMainProcess;
-    private List<Future> mFutures = new ArrayList<>();
     private static volatile boolean sHasInit;
     private List<Task> mAllTasks = new ArrayList<>();
-    private List<Class<? extends Task>> mClsAllTasks = new ArrayList<>();
-    private volatile List<Task> mMainThreadTasks = new ArrayList<>();
+    private List<Class<? extends Task>> mClsAllTaskClzs = new ArrayList<>();
     private CountDownLatch mCountDownLatch;
     private AtomicInteger mNeedWaitCount = new AtomicInteger();//保存需要Wait的Task的数量
     private List<Task> mNeedWaitTasks = new ArrayList<>();//调用了await的时候还没结束的且需要等待的Task
     private volatile List<Class<? extends Task>> mFinishedTasks = new ArrayList<>(100);//已经结束了的Task
-    private HashMap<Class<? extends Task>, ArrayList<Task>> mDependedHashMap = new HashMap<>();
+    private HashMap<Class<? extends Task>, ArrayList<Task>> mDependedMap = new HashMap<>();
     private AtomicInteger mAnalyseCount = new AtomicInteger();//启动器分析的次数，统计下分析的耗时；
 
+    private InitiatorExecutor mExecutor;
+
     private Initiator() {
+        mExecutor = new InitiatorExecutor(this);
     }
 
     public static void init(Context context) {
@@ -70,7 +67,7 @@ public class Initiator {
         if (task != null) {
             collectDepends(task);
             mAllTasks.add(task);
-            mClsAllTasks.add(task.getClass());
+            mClsAllTaskClzs.add(task.getClass());
             // 非主线程且需要wait的，主线程不需要CountDownLatch也是同步的
             if (ifNeedWait(task)) {
                 mNeedWaitTasks.add(task);
@@ -80,13 +77,19 @@ public class Initiator {
         return this;
     }
 
+    /**
+     * 例如TaskA依赖于TaskB，则把BClass和TaskA存入Map
+     * Key：任务的Class     Value：依赖于我的任务集合
+     *
+     * @param task TaskA
+     */
     private void collectDepends(Task task) {
         if (task.dependsOn() != null && task.dependsOn().size() > 0) {
             for (Class<? extends Task> cls : task.dependsOn()) {
-                if (mDependedHashMap.get(cls) == null) {
-                    mDependedHashMap.put(cls, new ArrayList<Task>());
+                if (mDependedMap.get(cls) == null) {
+                    mDependedMap.put(cls, new ArrayList<Task>());
                 }
-                mDependedHashMap.get(cls).add(task);
+                mDependedMap.get(cls).add(task);
                 if (mFinishedTasks.contains(cls)) {
                     task.satisfy();
                 }
@@ -95,7 +98,7 @@ public class Initiator {
     }
 
     private boolean ifNeedWait(Task task) {
-        return !task.runOnMainThread() && task.needWait();
+        return task.threadMode() != ThreadMode.MAIN && task.needWait();
     }
 
     @UiThread
@@ -107,55 +110,38 @@ public class Initiator {
         if (mAllTasks.size() > 0) {
             mAnalyseCount.getAndIncrement();
             printDependedMsg();
-            mAllTasks = TaskSortUtil.getSortResult(mAllTasks, mClsAllTasks);
+
+            mAllTasks = TaskSortUtil.getSortResult(mAllTasks, mClsAllTaskClzs);
             mCountDownLatch = new CountDownLatch(mNeedWaitCount.get());
 
-            sendAndExecuteAsyncTasks();
+            // 执行任务
+            for (Task task : mAllTasks) {
+                if (task.onlyInMainProcess() && !sIsMainProcess) {
+                    throw new RuntimeException("task " + task.getClass().getSimpleName() + " only run on main process!");
+                }
+                mExecutor.submit(task);
+                task.setSent(true);
+            }
 
-            DispatcherLog.i("task analyse cost " + (System.currentTimeMillis() - mStartTime) + "  begin main ");
-            executeTaskMain();
+            InitiatorLog.i("task analyse cost " + (System.currentTimeMillis() - mStartTime) + "  begin main ");
         }
-        DispatcherLog.i("task analyse cost startTime cost " + (System.currentTimeMillis() - mStartTime));
+        InitiatorLog.i("task analyse cost startTime cost " + (System.currentTimeMillis() - mStartTime));
     }
 
     public void cancel() {
-        for (Future future : mFutures) {
-            future.cancel(true);
-        }
-    }
-
-    private void executeTaskMain() {
-        mStartTime = System.currentTimeMillis();
-        for (Task task : mMainThreadTasks) {
-            long time = System.currentTimeMillis();
-            new DispatchRunnable(task, this).run();
-            DispatcherLog.i("real main " + task.getClass().getSimpleName() + " cost   " +
-                    (System.currentTimeMillis() - time));
-        }
-        DispatcherLog.i("maintask cost " + (System.currentTimeMillis() - mStartTime));
-    }
-
-    private void sendAndExecuteAsyncTasks() {
-        for (Task task : mAllTasks) {
-            if (task.onlyInMainProcess() && !sIsMainProcess) {
-                markTaskDone(task);
-            } else {
-                sendTaskReal(task);
-            }
-            task.setSend(true);
-        }
+        mExecutor.cancel();
     }
 
     /**
      * 查看被依赖的信息
      */
     private void printDependedMsg() {
-        DispatcherLog.i("needWait size : " + (mNeedWaitCount.get()));
-        if (false) {
-            for (Class<? extends Task> cls : mDependedHashMap.keySet()) {
-                DispatcherLog.i("cls " + cls.getSimpleName() + "   " + mDependedHashMap.get(cls).size());
-                for (Task task : mDependedHashMap.get(cls)) {
-                    DispatcherLog.i("cls       " + task.getClass().getSimpleName());
+        InitiatorLog.i("needWait size : " + (mNeedWaitCount.get()));
+        if (InitiatorLog.isDebug()) {
+            for (Class<? extends Task> cls : mDependedMap.keySet()) {
+                InitiatorLog.i("cls " + cls.getSimpleName() + "   " + mDependedMap.get(cls).size());
+                for (Task task : mDependedMap.get(cls)) {
+                    InitiatorLog.i("cls       " + task.getClass().getSimpleName());
                 }
             }
         }
@@ -167,9 +153,9 @@ public class Initiator {
      * @param launchTask
      */
     public void satisfyChildren(Task launchTask) {
-        ArrayList<Task> arrayList = mDependedHashMap.get(launchTask.getClass());
-        if (arrayList != null && arrayList.size() > 0) {
-            for (Task task : arrayList) {
+        ArrayList<Task> depend = mDependedMap.get(launchTask.getClass());
+        if (depend != null && depend.size() > 0) {
+            for (Task task : depend) {
                 task.satisfy();
             }
         }
@@ -184,52 +170,28 @@ public class Initiator {
         }
     }
 
-    private void sendTaskReal(final Task task) {
-        if (task.runOnMainThread()) {
-            mMainThreadTasks.add(task);
-
-            if (task.needCall()) {
-                task.setTaskCallBack(new TaskCallBack() {
-                    @Override
-                    public void call() {
-                        TaskStat.markTaskDone();
-                        task.setFinished(true);
-                        satisfyChildren(task);
-                        markTaskDone(task);
-                        DispatcherLog.i(task.getClass().getSimpleName() + " finish");
-
-                        Log.i("testLog", "call");
-                    }
-                });
-            }
-        } else {
-            // 直接发，是否执行取决于具体线程池
-            Future future = task.runOn().submit(new DispatchRunnable(task, this));
-            mFutures.add(future);
-        }
-    }
-
     public void executeTask(Task task) {
         if (ifNeedWait(task)) {
             mNeedWaitCount.getAndIncrement();
         }
-        task.runOn().execute(new DispatchRunnable(task, this));
+        mExecutor.submit(task);
     }
 
     @UiThread
     public void await() {
         try {
-            if (DispatcherLog.isDebug()) {
-                DispatcherLog.i("still has " + mNeedWaitCount.get());
+            if (InitiatorLog.isDebug()) {
+                InitiatorLog.i("still has " + mNeedWaitCount.get());
                 for (Task task : mNeedWaitTasks) {
-                    DispatcherLog.i("needWait: " + task.getClass().getSimpleName());
+                    InitiatorLog.i("needWait: " + task.getClass().getSimpleName());
                 }
             }
 
             if (mNeedWaitCount.get() > 0) {
-                mCountDownLatch.await(WAITTIME, TimeUnit.MILLISECONDS);
+                mCountDownLatch.await(WAIT_TIME, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
+            // ignore
         }
     }
 

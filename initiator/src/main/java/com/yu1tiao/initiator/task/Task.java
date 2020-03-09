@@ -3,30 +3,56 @@ package com.yu1tiao.initiator.task;
 import android.content.Context;
 import android.os.Process;
 
+import androidx.annotation.IntRange;
 
 import com.yu1tiao.initiator.Initiator;
-import com.yu1tiao.initiator.InitiatorExecutor;
+import com.yu1tiao.initiator.executor.ThreadMode;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
 
 public abstract class Task implements ITask {
+
     protected String mTag = getClass().getSimpleName().toString();
     protected Context mContext = Initiator.getContext();
     protected boolean mIsMainProcess = Initiator.isMainProcess();// 当前进程是否是主进程
+
     private volatile boolean mIsWaiting;// 是否正在等待
     private volatile boolean mIsRunning;// 是否正在执行
     private volatile boolean mIsFinished;// Task是否执行完成
-    private volatile boolean mIsSend;// Task是否已经被分发
-    private CountDownLatch mDepends = new CountDownLatch(dependsOn() == null ? 0 : dependsOn().size());// 当前Task依赖的Task数量（需要等待被依赖的Task执行完毕才能执行自己），默认没有依赖
+    private volatile boolean mIsSent;// Task是否已经被分发
+
+    private TaskCallback mTaskCallback;
+    private boolean mIsRunAsSoon;
+    private int mPriority;
+    private boolean mIsNeedWait;
+    private ThreadMode mThreadMode;
+    private Runnable mTailRunnable;
+    private boolean mIsOnlyInMainProcess;
+
+    private final List<Class<? extends Task>> mDependsOn;
+    // 当前Task依赖的Task数量（需要等待被依赖的Task执行完毕才能执行自己），默认没有依赖
+    private final CountDownLatch mDependsCountDownLatch;
+
+    Task(TaskBuilder builder) {
+        this.mDependsOn = builder.getDependsOn();
+        this.mDependsCountDownLatch = new CountDownLatch(mDependsOn == null ? 0 : mDependsOn.size());
+
+        this.mIsRunAsSoon = builder.isIsRunAsSoon();
+        this.mIsOnlyInMainProcess = builder.isIsOnlyInMainProcess();
+        this.mIsNeedWait = builder.isIsNeedWait();
+        this.mPriority = builder.getPriority();
+        this.mThreadMode = builder.getThreadMode();
+        this.mTailRunnable = builder.getTailRunnable();
+        this.mTaskCallback = builder.getTaskCallback();
+    }
 
     /**
      * 当前Task等待，让依赖的Task先执行
      */
     public void waitToSatisfy() {
         try {
-            mDepends.await();
+            mDependsCountDownLatch.await();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -36,7 +62,7 @@ public abstract class Task implements ITask {
      * 依赖的Task执行完一个
      */
     public void satisfy() {
-        mDepends.countDown();
+        mDependsCountDownLatch.countDown();
     }
 
     /**
@@ -45,8 +71,13 @@ public abstract class Task implements ITask {
      *
      * @return
      */
+    @Override
     public boolean needRunAsSoon() {
-        return false;
+        return mIsRunAsSoon;
+    }
+
+    public void setNeedRunAsSoon(boolean runAsSoon) {
+        this.mIsRunAsSoon = runAsSoon;
     }
 
     /**
@@ -56,18 +87,12 @@ public abstract class Task implements ITask {
      */
     @Override
     public int priority() {
-        return Process.THREAD_PRIORITY_BACKGROUND;
+        return mPriority;
     }
 
-    /**
-     * Task执行在哪个线程池，默认在IO的线程池；
-     * CPU 密集型的一定要切换到DispatcherExecutor.getCPUExecutor();
-     *
-     * @return
-     */
-    @Override
-    public ExecutorService runOn() {
-        return InitiatorExecutor.getIOExecutor();
+    public void setPriority(@IntRange(from = Process.THREAD_PRIORITY_FOREGROUND,
+            to = Process.THREAD_PRIORITY_LOWEST) int priority) {
+        this.mPriority = priority;
     }
 
     /**
@@ -77,7 +102,11 @@ public abstract class Task implements ITask {
      */
     @Override
     public boolean needWait() {
-        return false;
+        return mIsNeedWait;
+    }
+
+    public void setNeedWait(boolean needWait) {
+        this.mIsNeedWait = needWait;
     }
 
     /**
@@ -87,36 +116,45 @@ public abstract class Task implements ITask {
      */
     @Override
     public List<Class<? extends Task>> dependsOn() {
-        return null;
+        return mDependsOn;
     }
 
     @Override
-    public boolean runOnMainThread() {
-        return false;
+    public ThreadMode threadMode() {
+        return mThreadMode;
+    }
+
+    public void setThreadMode(ThreadMode mThreadMode) {
+        this.mThreadMode = mThreadMode;
     }
 
     @Override
     public Runnable getTailRunnable() {
-        return null;
+        return mTailRunnable;
     }
 
-    @Override
-    public void setTaskCallBack(TaskCallBack callBack) {}
-
-    @Override
-    public boolean needCall() {
-        return false;
+    public void setTailRunnable(Runnable mTailRunnable) {
+        this.mTailRunnable = mTailRunnable;
     }
 
-    /**
-     * 是否只在主进程，默认是
-     *
-     * @return
-     */
     @Override
     public boolean onlyInMainProcess() {
-        return true;
+        return mIsOnlyInMainProcess;
     }
+
+    public void setOnlyInMainProcess(boolean mIsOnlyInMainProcess) {
+        this.mIsOnlyInMainProcess = mIsOnlyInMainProcess;
+    }
+
+    @Override
+    public void setTaskCallback(TaskCallback callBack) {
+        this.mTaskCallback = callBack;
+    }
+
+    public TaskCallback getTaskCallback() {
+        return mTaskCallback;
+    }
+
 
     public boolean isRunning() {
         return mIsRunning;
@@ -134,12 +172,12 @@ public abstract class Task implements ITask {
         mIsFinished = finished;
     }
 
-    public boolean isSend() {
-        return mIsSend;
+    public boolean isSent() {
+        return mIsSent;
     }
 
-    public void setSend(boolean send) {
-        mIsSend = send;
+    public void setSent(boolean sent) {
+        mIsSent = sent;
     }
 
     public boolean isWaiting() {

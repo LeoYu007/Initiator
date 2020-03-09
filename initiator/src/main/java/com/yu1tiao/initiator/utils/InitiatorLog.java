@@ -2,7 +2,7 @@ package com.yu1tiao.initiator.utils;
 
 import android.util.Log;
 
-public class DispatcherLog {
+public class InitiatorLog {
 
     private static boolean sDebug = true;
 

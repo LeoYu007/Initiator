@@ -6,30 +6,24 @@ import android.os.Process;
 import androidx.core.os.TraceCompat;
 
 import com.yu1tiao.initiator.Initiator;
-import com.yu1tiao.initiator.stat.TaskStat;
-import com.yu1tiao.initiator.utils.DispatcherLog;
+import com.yu1tiao.initiator.utils.InitiatorLog;
 
 /**
  * 任务真正执行的地方
  */
-
-public class DispatchRunnable implements Runnable {
+public class InitiatorTask implements Runnable {
     private Task mTask;
-    private Initiator mTaskDispatcher;
+    private Initiator mInitiator;
 
-    public DispatchRunnable(Task task) {
+    public InitiatorTask(Task task, Initiator initiator) {
         this.mTask = task;
-    }
-    public DispatchRunnable(Task task, Initiator dispatcher) {
-        this.mTask = task;
-        this.mTaskDispatcher = dispatcher;
+        this.mInitiator = initiator;
     }
 
     @Override
     public void run() {
         TraceCompat.beginSection(mTask.getClass().getSimpleName());
-        DispatcherLog.i(mTask.getClass().getSimpleName()
-                + " begin run" + "  Situation  " + TaskStat.getCurrentSituation());
+        InitiatorLog.i(mTask.getClass().getSimpleName() + " begin run");
 
         Process.setThreadPriority(mTask.priority());
 
@@ -51,17 +45,15 @@ public class DispatchRunnable implements Runnable {
             tailRunnable.run();
         }
 
-        if (!mTask.needCall() || !mTask.runOnMainThread()) {
-            printTaskLog(startTime, waitTime);
+        printTaskLog(startTime, waitTime);
 
-            TaskStat.markTaskDone();
-            mTask.setFinished(true);
-            if(mTaskDispatcher != null){
-                mTaskDispatcher.satisfyChildren(mTask);
-                mTaskDispatcher.markTaskDone(mTask);
-            }
-            DispatcherLog.i(mTask.getClass().getSimpleName() + " finish");
+        mTask.setFinished(true);
+        if (mInitiator != null) {
+            mInitiator.satisfyChildren(mTask);
+            mInitiator.markTaskDone(mTask);
         }
+
+        InitiatorLog.i(mTask.getClass().getSimpleName() + " finish");
         TraceCompat.endSection();
     }
 
@@ -73,13 +65,12 @@ public class DispatchRunnable implements Runnable {
      */
     private void printTaskLog(long startTime, long waitTime) {
         long runTime = System.currentTimeMillis() - startTime;
-        if (DispatcherLog.isDebug()) {
-            DispatcherLog.i(mTask.getClass().getSimpleName() + "  wait " + waitTime + "    run "
+        if (InitiatorLog.isDebug()) {
+            InitiatorLog.i(mTask.getClass().getSimpleName() + "  wait " + waitTime + "    run "
                     + runTime + "   isMain " + (Looper.getMainLooper() == Looper.myLooper())
                     + "  needWait " + (mTask.needWait() || (Looper.getMainLooper() == Looper.myLooper()))
                     + "  ThreadId " + Thread.currentThread().getId()
                     + "  ThreadName " + Thread.currentThread().getName()
-                    + "  Situation  " + TaskStat.getCurrentSituation()
             );
         }
     }
