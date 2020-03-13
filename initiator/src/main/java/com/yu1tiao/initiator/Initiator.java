@@ -30,7 +30,7 @@ public class Initiator {
     private static boolean sIsMainProcess;
     private static volatile boolean sHasInit;
     private List<Task> mAllTasks = new ArrayList<>();
-    private List<Class<? extends Task>> mClsAllTaskCls = new ArrayList<>();
+    private List<Class<? extends Task>> mAllTaskCls = new ArrayList<>();
     private CountDownLatch mCountDownLatch;
     private AtomicInteger mNeedWaitCount = new AtomicInteger();//保存需要Wait的Task的数量
     private List<Task> mNeedWaitTasks = new ArrayList<>();//调用了await的时候还没结束的且需要等待的Task
@@ -66,7 +66,7 @@ public class Initiator {
         if (task != null) {
             collectDepends(task);
             mAllTasks.add(task);
-            mClsAllTaskCls.add(task.getClass());
+            mAllTaskCls.add(task.getClass());
             // 非主线程且需要wait的，主线程不需要CountDownLatch也是同步的
             if (ifNeedWait(task)) {
                 mNeedWaitTasks.add(task);
@@ -85,7 +85,7 @@ public class Initiator {
         if (mAllTasks.size() > 0) {
             printDependedMsg();
 
-            mAllTasks = TaskSortUtil.getSortResult(mAllTasks, mClsAllTaskCls);
+            mAllTasks = TaskSortUtil.getSortResult(mAllTasks, mAllTaskCls);
             mCountDownLatch = new CountDownLatch(mNeedWaitCount.get());
 
             // 执行任务
@@ -96,6 +96,8 @@ public class Initiator {
                 mExecutor.submit(task);
                 task.setSent(true);
             }
+
+            await();
 
             InitiatorLog.i("task analyse cost " + (System.currentTimeMillis() - mStartTime) + "  begin main ");
         }
@@ -159,20 +161,28 @@ public class Initiator {
         }
     }
 
+    /**
+     * 标记任务为已完成
+     *
+     * @param task
+     */
     public void markTaskDone(Task task) {
+        mFinishedTasks.add(task.getClass());
         if (ifNeedWait(task)) {
-            mFinishedTasks.add(task.getClass());
             mNeedWaitTasks.remove(task);
             mCountDownLatch.countDown();
             mNeedWaitCount.getAndDecrement();
         }
     }
 
+    /**
+     * 如果有需要主线程等待的任务（必须在application的onCreate中执行完的），让主线程等待
+     */
     @UiThread
-    public void await() {
+    private void await() {
         try {
             if (InitiatorLog.isDebug()) {
-                InitiatorLog.i("still has " + mNeedWaitCount.get());
+                InitiatorLog.i("still has " + mNeedWaitCount.get() + " need wait task");
                 for (Task task : mNeedWaitTasks) {
                     InitiatorLog.i("needWait: " + task.getClass().getSimpleName());
                 }
